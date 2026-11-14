@@ -23,3 +23,7 @@ flowchart TD
 - **Dual-Model Consensus Gate**: Generative coding verified by adversarial audit models.
 - **Automated Local QA Runner**: Executes static checks, linting, unit tests, and secret leak scanning before merge.
 - **Enterprise GitHub Actions Integration**: Ready-to-use workflows for CI/CD pipeline verification.
+
+---
+
+Part of [my always-on agent stack](https://github.com/Amz34) · [Awesome Agent Infrastructure](https://github.com/Amz34/awesome-agent-infrastructure) (135 live-checked building blocks).
