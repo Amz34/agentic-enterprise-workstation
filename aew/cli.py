@@ -2,7 +2,7 @@
 """
 Enterprise Agentic SDLC Orchestrator CLI (`aew`).
 Coordinates task planning, worktree isolation, coder agent execution,
-consensus audit, QA verification, episodic memory, and GitHub Enterprise PR landing.
+consensus audit, QA verification, episodic memory, notifications, and GitHub Enterprise PR landing.
 """
 
 import argparse
@@ -18,10 +18,11 @@ from .qa_runner import QAHarness
 from .memory import MemoryStore
 from .github_client import GitHubEnterpriseClient
 from .agent_runner import LiveAgentRunner
+from .notifications import NotificationDispatcher
 
 
 def cmd_status(args):
-    """Inspect current workstation providers, worktrees, and health."""
+    """Inspect current workstation providers, worktrees, memory, and notifications."""
     pool = CLIProviderPool()
     providers = pool.detect_available_clis()
     print("=" * 60)
@@ -41,10 +42,15 @@ def cmd_status(args):
         print(f"  • {wt.get('branch', 'detached')} -> {wt['path']}")
     
     memory = MemoryStore()
+    mode_str = "PostgreSQL (Enterprise Central)" if memory.is_postgres else "SQLite (Local Workspace)"
     rules = memory.get_rules()
-    print(f"\nEpisodic Rules in Cache ({len(rules)}):")
+    print(f"\nFleet Memory [{mode_str}] - Rules ({len(rules)}):")
     for r in rules[:3]:
         print(f"  [{r['category']}] {r['rule_text']}")
+
+    notifier = NotificationDispatcher()
+    has_webhooks = notifier.has_configured_webhooks()
+    print(f"\nTeam Webhook Dispatcher: {'🟢 ACTIVE' if has_webhooks else '⚪ IDLE (No webhook URLs set)'}")
     print("=" * 60)
 
 
@@ -53,6 +59,7 @@ def cmd_run_mission(args):
     task_name = args.task
     branch = f"feat/{task_name}"
     mission_id = str(uuid.uuid4())[:8]
+    notifier = NotificationDispatcher()
     print(f"\n[1/6] Initializing mission '{task_name}' (ID: {mission_id}) on branch '{branch}'...")
 
     wt_mgr = WorktreeManager()
@@ -103,6 +110,12 @@ def cmd_run_mission(args):
             for f in r.get("findings", []):
                 print(f"     [{f['severity']}] {f['file']}: {f['message']}")
         memory.record_mission_end(mission_id, "FAILED_AUDIT")
+        notifier.dispatch_alert(
+            title=f"AEW Audit Failed: {task_name}",
+            message=f"Consensus security auditor blocked mission '{task_name}' due to violations.",
+            level="CRITICAL",
+            fields={"Mission ID": mission_id, "Branch": branch}
+        )
         sys.exit(1)
     print(f"  -> Passed audit cleanly ({audit_res['audited_count']} files verified).")
 
@@ -128,11 +141,18 @@ def cmd_run_mission(args):
         subprocess.run(["git", "checkout", "main"], cwd=str(wt_mgr.repo_root), check=True)
         subprocess.run(["git", "merge", branch, "--no-edit"], cwd=str(wt_mgr.repo_root), check=True)
 
-    # Step 6: Cleanup & Memory Persistence
-    print(f"[6/6] Persisting mission learnings & cleaning worktree...")
+    # Step 6: Cleanup, Notifications & Memory Persistence
+    print(f"[6/6] Persisting mission learnings & dispatching alerts...")
     wt_mgr.remove_worktree(branch)
     memory.record_mission_end(mission_id, "SUCCESS")
     memory.add_rule("SDLC", f"Verified clean syntax & no secret leaks for {task_name}", mission_id)
+    
+    notifier.dispatch_alert(
+        title=f"AEW Mission Completed: {task_name}",
+        message=f"Mission '{task_name}' was verified by consensus and successfully landed.",
+        level="SUCCESS",
+        fields={"Mission ID": mission_id, "Branch": branch, "Status": "LANDED"}
+    )
     print(f"  ✅ Mission '{task_name}' complete and recorded in memory store.")
 
 
@@ -148,7 +168,7 @@ def main():
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
     # status
-    p_status = subparsers.add_parser("status", help="Inspect agent providers and active worktrees")
+    p_status = subparsers.add_parser("status", help="Inspect agent providers, worktrees, and memory")
     p_status.set_defaults(func=cmd_status)
 
     # mission

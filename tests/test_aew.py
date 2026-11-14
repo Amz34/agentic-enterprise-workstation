@@ -6,6 +6,7 @@ from aew.consensus import ReviewAuditor
 from aew.provider_pool import CLIProviderPool, ProviderCircuitBreaker
 from aew.memory import MemoryStore
 from aew.github_client import GitHubEnterpriseClient
+from aew.notifications import NotificationDispatcher
 
 
 class TestAEWSuite(unittest.TestCase):
@@ -13,6 +14,7 @@ class TestAEWSuite(unittest.TestCase):
         self.test_dir = tempfile.mkdtemp()
         self.auditor = ReviewAuditor()
         self.memory = MemoryStore(db_path=Path(self.test_dir) / "test_memory.db")
+        self.notifier = NotificationDispatcher()
 
     def tearDown(self):
         shutil.rmtree(self.test_dir, ignore_errors=True)
@@ -60,6 +62,11 @@ class TestAEWSuite(unittest.TestCase):
     def test_github_client_instantiation(self):
         client = GitHubEnterpriseClient(self.test_dir)
         self.assertTrue(client.has_gh)
+
+    def test_notification_dispatcher_fallback(self):
+        # Without env vars, dispatcher should gracefully handle alert without crashing
+        res = self.notifier.dispatch_alert("Test Alert", "Unit test message", level="INFO")
+        self.assertIsInstance(res, dict)
 
 
 if __name__ == "__main__":
